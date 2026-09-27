@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="es" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DiDi Food - UI de Navegación Exacta</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+        }
+    </script>
+
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Leaflet JS & CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Fonts Google -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            -webkit-text-size-adjust: 100%;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+
+        /* --- Modo Edición Global --- */
+        body.edit-mode [contenteditable="true"] {
+            outline: 2px dashed #ff5100 !important;
+            outline-offset: 2px;
+            background-color: rgba(255, 81, 0, 0.15);
+            border-radius: 4px;
+            cursor: text;
+            user-select: text !important;
+            -webkit-user-select: text !important;
+        }
+
+        /* --- Animación de Carga Órbita 3D --- */
+        .didi-loader {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px;
+            height: 20px;
+            pointer-events: none;
+            z-index: 30;
+        }
+
+        .didi-loader .planet {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #ffffff;
+            border-radius: 50%;
+            top: 5px;
+            left: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+        }
+
+        .didi-loader .planet:nth-child(1) { animation: orbit-1 1.2s linear infinite; }
+        .didi-loader .planet:nth-child(2) { animation: orbit-2 1.2s linear infinite; }
+
+        @keyframes orbit-1 {
+            0%   { transform: translate(-20px, 0px) scale(0.6); z-index: 1; opacity: 0.8; }
+            25%  { transform: translate(0px, 4px) scale(0.85); z-index: 2; opacity: 1; }
+            50%  { transform: translate(20px, 0px) scale(1.1); z-index: 3; opacity: 1; }
+            75%  { transform: translate(0px, -4px) scale(0.85); z-index: 2; opacity: 1; }
+            100% { transform: translate(-20px, 0px) scale(0.6); z-index: 1; opacity: 0.8; }
+        }
+
+        @keyframes orbit-2 {
+            0%   { transform: translate(20px, 0px) scale(1.1); z-index: 3; opacity: 1; }
+            25%  { transform: translate(0px, -4px) scale(0.85); z-index: 2; opacity: 1; }
+            50%  { transform: translate(-20px, 0px) scale(0.6); z-index: 1; opacity: 0.8; }
+            75%  { transform: translate(0px, 4px) scale(0.85); z-index: 2; opacity: 1; }
+            100% { transform: translate(20px, 0px) scale(1.1); z-index: 3; opacity: 1; }
+        }
+
+        /* --- Contenedores de Mapa --- */
+        .real-map-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background-color: #f3f4f6;
+            transition: background-color 0.3s ease;
+        }
+
+        .navy-dark-map .leaflet-tile { filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%) !important; }
+        .dark-map-bg { background-color: #0b1329 !important; }
+        .leaflet-control-attribution { display: none !important; }
+
+        /* Bottom Sheet Etapa 2 Adaptable (Más compacto) */
+        .bottom-sheet {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            border-radius: 24px 24px 0 0;
+            box-shadow: 0 -4px 25px rgba(0,0,0,0.15);
+            padding: 22px 20px 24px 20px; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            z-index: 500;
+            animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        html.dark .bottom-sheet { box-shadow: 0 -6px 25px rgba(0,0,0,0.6); }
+
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        @keyframes slideDown { from { transform: translateY(0); } to { transform: translateY(100%); } }
+        .slide-down-animation { animation: slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards !important; }
+
+        .sheet-handle { display: none; }
+
+        /* --- Animación de Logo Modificada (Redonda y Verde Claro) --- */
+        .animation-slot {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .success-check-badge, .restaurant-badge-logo {
+            position: absolute;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .success-check-badge {
+            background-color: #4cd964;
+            box-shadow: 0 2px 8px rgba(76, 217, 100, 0.4);
+            animation: toggleIconAnimation 4s ease-in-out infinite;
+        }
+        .success-check-badge svg { width: 40px; height: 40px; fill: #ffffff; }
+
+        .restaurant-badge-logo {
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-color: #ffffff;
+            border: 1.5px solid #eaeaea;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            animation: toggleLogoAnimation 4s ease-in-out infinite;
+        }
+        
+        html.dark .restaurant-badge-logo { border-color: #333; }
+
+        @keyframes toggleIconAnimation { 0%, 35%, 100% { opacity: 1; transform: scale(1); } 45%, 90% { opacity: 0; transform: scale(0.5); } }
+        @keyframes toggleLogoAnimation { 0%, 35%, 100% { opacity: 0; transform: scale(0.5); } 45%, 90% { opacity: 1; transform: scale(1); } }
+
+        /* Botones de Acción */
+        .btn-action {
+            width: 100%;
+            height: 54px;
+            background-color: #ff5a00;
+            color: #ffffff;
+            border: none;
+            border-radius: 16px;
+            font-size: 19px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+        .btn-action:active { transform: scale(0.98); }
+
+        .stage-transition { transition: opacity 0.3s ease-in-out; }
+
+        /* --- ETAPA 2: PANEL DE DETALLES DESLIZABLE --- */
+        #stage2-nav-sheet {
+            height: 245px;
+            max-height: 86vh;
+            overflow: hidden;
+            touch-action: pan-y;
+            will-change: height, transform;
+        }
+
+        #stage2-nav-sheet.stage2-sheet-expanded {
+            height: min(86vh, 760px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        #stage2-nav-sheet .stage2-expand-handle {
+            width: 62px;
+            height: 6px;
+            border-radius: 999px;
+            background: #d7d7da;
+            margin: 0 auto 18px;
+            flex-shrink: 0;
+            cursor: grab;
+        }
+
+        html.dark #stage2-nav-sheet .stage2-expand-handle { background: #55565a; }
+
+        #stage2-nav-sheet .stage2-details-content {
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transform: translateY(12px);
+            transition: opacity .25s ease, max-height .35s ease, transform .35s ease;
+        }
+
+        #stage2-nav-sheet.stage2-sheet-expanded .stage2-details-content {
+            opacity: 1;
+            max-height: 700px;
+            transform: translateY(0);
+        }
+
+        .stage2-detail-card {
+            border: 1px solid #d7d7da;
+            border-radius: 24px;
+            background: #fff;
+            padding: 26px 20px 22px;
+        }
+
+        html.dark .stage2-detail-card { border-color: #3a3a3c; background: #121212; }
+
+        .stage2-contact-button {
+            width: 64px; height: 64px; border-radius: 22px; background: #f1f1f5;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: #111827;
+        }
+        html.dark .stage2-contact-button { background: #2c2c2e; color: #fff; }
+        .stage2-cash-icon { width: 34px; height: 34px; border: 2px solid currentColor; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 18px; font-weight: 900; }
+        .stage2-cash-value { color: #ea580c; font-weight: 800; }
+        .stage2-help-card { min-height: 76px; }
+
+        @media (max-width: 420px) {
+            #stage2-nav-sheet { height: 230px; }
+            #stage2-nav-sheet.stage2-sheet-expanded { height: 88vh; }
+            .stage2-detail-card { padding: 22px 18px 20px; }
+            .stage2-contact-button { width: 58px; height: 58px; border-radius: 20px; }
+        }
+
+        /* --- Ocultar input spinners en Modal --- */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+            -webkit-appearance: none; 
+            margin: 0; 
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black text-gray-900 dark:text-white flex justify-center items-center h-screen w-screen p-0 m-0 overflow-hidden transition-colors duration-300">
+
+    <!-- MODAL VENTANA TRANSPARENTE DE CÓDIGO -->
+    <div id="code-modal-overlay" class="fixed inset-0 bg-black/50 dark:bg-black/70 backdrop-blur-[2px] z-[2000] hidden flex-col items-center justify-center opacity-0 transition-opacity duration-300">
+        <div id="code-modal-content" class="bg-white dark:bg-[#1c1c1e] w-[90%] max-w-[340px] rounded-3xl p-6 shadow-2xl transform scale-95 transition-transform duration-300">
+            <div class="text-center mb-5">
+                <h3 class="text-[20px] font-black text-gray-900 dark:text-white mb-2">Ingresar código</h3>
+                <p class="text-[14px] text-gray-500 dark:text-[#a0a0a0]">Solicita los 4 dígitos al restaurante para confirmar.</p>
+            </div>
+            
+            <div class="flex justify-center gap-3 mb-6">
+                <!-- 4 Cajas para dígitos -->
+                <input type="number" maxlength="1" class="code-input w-[56px] h-[64px] text-center text-[28px] font-black bg-[#f5f6f8] dark:bg-[#2c2c2e] text-gray-900 dark:text-white rounded-[16px] border-[1.5px] border-transparent focus:border-[#ff5a00] outline-none caret-[#ff5a00] transition-colors" autofocus>
+                <input type="number" maxlength="1" class="code-input w-[56px] h-[64px] text-center text-[28px] font-black bg-[#f5f6f8] dark:bg-[#2c2c2e] text-gray-900 dark:text-white rounded-[16px] border-[1.5px] border-transparent focus:border-[#ff5a00] outline-none caret-[#ff5a00] transition-colors">
+                <input type="number" maxlength="1" class="code-input w-[56px] h-[64px] text-center text-[28px] font-black bg-[#f5f6f8] dark:bg-[#2c2c2e] text-gray-900 dark:text-white rounded-[16px] border-[1.5px] border-transparent focus:border-[#ff5a00] outline-none caret-[#ff5a00] transition-colors">
+                <input type="number" maxlength="1" class="code-input w-[56px] h-[64px] text-center text-[28px] font-black bg-[#f5f6f8] dark:bg-[#2c2c2e] text-gray-900 dark:text-white rounded-[16px] border-[1.5px] border-transparent focus:border-[#ff5a00] outline-none caret-[#ff5a00] transition-colors">
+            </div>
+
+            <div class="flex gap-3">
+                <button id="btn-cancel-code" class="flex-1 py-[14px] rounded-2xl font-bold text-gray-700 dark:text-[#d0d0d0] bg-gray-200 dark:bg-[#2c2c2e] active:scale-95 transition-all text-[16px]">Cancelar</button>
+                <button id="btn-confirm-code" class="flex-1 py-[14px] rounded-2xl font-bold text-white bg-[#ff5a00] opacity-50 pointer-events-none active:scale-95 transition-all text-[16px]">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inputs ocultos para carga de imágenes -->
+    <input type="file" id="image-file-input" accept="image/*" class="w-0 h-0 absolute opacity-0" style="z-index: -100;">
+    <input type="file" id="logo-file-input" accept="image/*" class="w-0 h-0 absolute opacity-0" style="z-index: -100;">
+
+    <!-- Botón de Modo Oscuro -->
+    <div id="dark-mode-container" class="fixed top-3 right-3 z-50 flex items-center gap-2 transition-opacity duration-700">
+        <button id="btn-dark-mode-toggle" title="Alternar Modo Oscuro / Claro" class="w-9 h-9 bg-white dark:bg-[#1c1c1e] text-gray-800 dark:text-yellow-400 rounded-full flex items-center justify-center shadow-lg border border-gray-200 dark:border-[#2c2c2e] active:scale-95 transition-all">
+            <i id="dark-mode-icon" class="fa-solid fa-moon text-sm"></i>
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ETAPA 1: INTERFAZ DE DETALLES REPLICADA    -->
+    <!-- ========================================== -->
+    <div id="stage-1" class="w-full h-full flex justify-center items-center stage-transition bg-black sm:bg-transparent z-40 relative">
+        
+        <div id="app-container" class="w-full h-full sm:max-w-md sm:h-[92vh] sm:rounded-[30px] bg-[#f5f6f8] dark:bg-[#121212] overflow-hidden flex flex-col relative shadow-2xl transition-colors duration-300">
+
+            <!-- IMAGEN DE CABECERA -->
+            <div id="header-image-container" class="relative h-[25vh] min-h-[180px] w-full bg-cover bg-center shrink-0 cursor-pointer group" style="background-image: url('https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80');">
+                <div class="absolute inset-0 bg-black/20"></div>
+                
+                <div id="camera-indicator" class="absolute inset-0 bg-black/40 opacity-0 transition-opacity duration-300 flex flex-col items-center justify-center text-white gap-1 pointer-events-none">
+                    <i class="fa-solid fa-camera text-xl"></i>
+                    <span class="text-[11px] font-bold tracking-wide">Cambiar imagen de cabecera</span>
+                </div>
+                
+                <div class="absolute top-8 left-4 z-10">
+                    <button id="btn-edit-switch" class="w-[42px] h-[42px] bg-[#f5f6f8] dark:bg-[#1c1c1e] rounded-[14px] flex items-center justify-center shadow-sm active:scale-95 transition-all duration-300">
+                        <i id="edit-icon" class="fa-solid fa-chevron-down text-black dark:text-white text-[16px]"></i>
+                    </button>
+                </div>
+                
+                <!-- Botones Extras de Edición -->
+                <div id="btn-change-logo-container" class="absolute top-[85px] left-4 z-10 transition-opacity duration-300 opacity-0 pointer-events-none">
+                    <button id="btn-change-logo" class="bg-white/95 dark:bg-[#1c1c1e]/95 text-black dark:text-white px-3 py-2 rounded-xl text-[13px] font-bold shadow-md active:scale-95 transition-all flex items-center gap-2 border border-gray-200 dark:border-gray-700 hover:bg-gray-50">
+                        <i class="fa-solid fa-cloud-arrow-up text-[#ff5a00]"></i> Subir Logo (Etapa 2)
+                    </button>
+                </div>
+
+                <div id="btn-toggle-verification-container" class="absolute top-[135px] left-4 z-10 transition-opacity duration-300 opacity-0 pointer-events-none">
+                    <button id="btn-toggle-verification" class="bg-white/95 dark:bg-[#1c1c1e]/95 text-black dark:text-white px-3 py-2 rounded-xl text-[13px] font-bold shadow-md active:scale-95 transition-all flex items-center gap-2 border border-gray-200 dark:border-gray-700 hover:bg-gray-50">
+                        <i class="fa-solid fa-shield-halved text-[#ff5a00]"></i> Código Verificación
+                    </button>
+                </div>
+
+                <div class="absolute top-10 right-4 z-10">
+                    <div class="bg-black/60 text-white text-[13px] font-medium px-3 py-1.5 rounded-full flex items-center gap-1.5 backdrop-blur-sm">
+                        <span contenteditable="false" data-editable="true">1/1</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CONTENIDO DESPLAZABLE -->
+            <div class="flex-1 bg-white dark:bg-[#121212] rounded-t-[24px] -mt-5 relative z-20 flex flex-col overflow-y-auto">
+                <div class="w-full flex justify-center pt-3 pb-2 shrink-0">
+                    <div class="w-10 h-[5px] bg-gray-200 dark:bg-[#2c2c2e] rounded-full"></div>
+                </div>
+
+                <div class="px-5 pb-4 flex flex-col gap-4">
+                    <div class="flex items-center justify-between">
+                        <div class="pr-3">
+                            <h1 id="stage1-restaurant-name" contenteditable="false" data-editable="true" class="text-[20px] font-bold text-gray-900 dark:text-white tracking-tight leading-tight">Little Caesars Pizza (Restrepo)</h1>
+                            <p contenteditable="false" data-editable="true" class="text-[14px] text-gray-500 dark:text-[#a0a0a0] mt-1 font-medium">Little Caesars Pizza Restrepo</p>
+                        </div>
+                        <button class="w-[42px] h-[42px] bg-[#f5f6f8] dark:bg-[#1c1c1e] rounded-[14px] flex items-center justify-center text-black dark:text-white transition shrink-0">
+                            <i class="fa-solid fa-phone text-[16px]"></i>
+                        </button>
+                    </div>
+
+                    <div class="bg-[#f5f6f8] dark:bg-[#1c1c1e] rounded-2xl p-4">
+                        <p contenteditable="false" data-editable="true" class="text-[14px] font-semibold text-gray-900 dark:text-white leading-tight">
+                            La tienda ha confirmado que el pedido está listo para recolectar
+                        </p>
+                    </div>
+
+                    <div class="border border-gray-200 dark:border-[#2c2c2e] rounded-3xl p-5 bg-white dark:bg-[#121212] shadow-sm">
+                        <div class="mb-4">
+                            <span id="stage1-order-title" contenteditable="false" data-editable="true" class="text-[22px] font-black text-gray-900 dark:text-white">#38 Usuario7236</span>
+                        </div>
+                        
+                        <!-- CONTENEDOR 1: MODO NORMAL "TENGO EL PEDIDO" -->
+                        <div id="normal-order-flow" class="block">
+                            <div class="flex items-center gap-2.5 text-[14px] text-gray-800 dark:text-[#e0e0e0] mb-5">
+                                <span class="w-[18px] h-[18px] rounded-[4px] border-[1.5px] border-gray-900 dark:border-[#e0e0e0] flex items-center justify-center text-[11px] font-bold" contenteditable="false" data-editable="true">$</span>
+                                <span contenteditable="false" data-editable="true" class="font-medium">Transferencia (plataforma a tienda)</span>
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                            </div>
+
+                            <button id="btn-order-action" class="w-full bg-[#ff5a00] text-white font-bold py-[14px] rounded-xl text-[16px] transition active:scale-[0.98] flex justify-center items-center">
+                                <span contenteditable="false" data-editable="true" id="btn-text-node">Tengo el pedido</span>
+                            </button>
+                        </div>
+
+                        <!-- CONTENEDOR 2: MODO "CÓDIGO DE VERIFICACIÓN" -->
+                        <div id="verification-order-flow" class="hidden">
+                            <div class="flex items-center gap-3 text-[15.5px] text-gray-800 dark:text-[#e0e0e0] mb-5 mt-1">
+                                <!-- Ícono de Llave Creado Exactamente a Medida -->
+                                <span class="shrink-0 flex items-center justify-center text-gray-800 dark:text-[#e0e0e0]">
+                                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="2" y="5" width="20" height="14" rx="4"></rect>
+                                        <circle cx="8" cy="12" r="2.5"></circle>
+                                        <path d="M10.5 12h5.5"></path>
+                                        <path d="M13.5 12v3"></path>
+                                        <path d="M16 12v3"></path>
+                                    </svg>
+                                </span>
+                                <span contenteditable="false" data-editable="true" class="font-medium tracking-wide">Código de verificación</span>
+                            </div>
+
+                            <!-- Botón con color naranja original #ff5a00 -->
+                            <button id="btn-verification-action" class="w-full bg-[#ff5a00] text-white font-bold py-[14px] rounded-xl text-[16px] transition active:scale-[0.98] flex justify-center items-center">
+                                <span contenteditable="false" data-editable="true">Ingresar código de verificación</span>
+                            </button>
+                        </div>
+
+                        <div class="text-center mt-5">
+                            <a href="#" class="text-[13.5px] font-medium text-gray-400 hover:text-gray-600 dark:text-[#808080] inline-flex items-center transition">
+                                <span contenteditable="false" data-editable="true">Detalles del pedido</span> 
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-0.5"><path d="m9 18 6-6-6-6"/></svg>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="bg-[#f5f6f8] dark:bg-[#1c1c1e] rounded-2xl p-4 flex items-center justify-between cursor-pointer">
+                        <div class="flex items-center gap-3">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-gray-900 dark:text-white"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                            <span contenteditable="false" data-editable="true" class="text-[15px] font-bold text-gray-900 dark:text-white">Centro de ayuda</span>
+                        </div>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="m9 18 6-6-6-6"/></svg>
+                    </div>
+
+                    <div class="bg-[#f5f6f8] dark:bg-[#1c1c1e] rounded-2xl p-4">
+                        <p contenteditable="false" data-editable="true" class="text-[13px] text-gray-500 dark:text-[#a0a0a0] font-medium mb-3">¿Te gustó el servicio de la tienda?</p>
+                        <div class="flex items-center justify-evenly pt-1 pb-1">
+                            <button class="flex items-center gap-2 text-gray-800 dark:text-white font-bold text-[14px]">
+                                <i class="fa-regular fa-thumbs-down text-[18px]"></i>
+                                <span contenteditable="false" data-editable="true">No</span>
+                            </button>
+                            <div class="h-6 w-[1px] bg-gray-300 dark:bg-[#38383a]"></div>
+                            <button class="flex items-center gap-2 text-gray-800 dark:text-white font-bold text-[14px]">
+                                <i class="fa-regular fa-thumbs-up text-[18px]"></i>
+                                <span contenteditable="false" data-editable="true">Sí</span>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- BARRA INFERIOR (SLIDER REDISEÑADO) -->
+            <div class="bg-white dark:bg-[#121212] px-5 pt-3 pb-6 shrink-0 z-30 shadow-[0_-10px_20px_rgba(255,255,255,1)] dark:shadow-[0_-10px_20px_rgba(18,18,18,1)] flex items-center gap-3">
+                
+                <button class="w-[50px] h-[50px] bg-transparent flex flex-col items-center justify-center gap-[6px] shrink-0 text-gray-900 dark:text-white">
+                    <div class="w-6 h-[2px] bg-current relative rounded-full">
+                        <div class="absolute left-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 border-[2px] border-current bg-white dark:bg-[#121212] rounded-full"></div>
+                    </div>
+                    <div class="w-6 h-[2px] bg-current relative rounded-full">
+                        <div class="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 border-[2px] border-current bg-white dark:bg-[#121212] rounded-full"></div>
+                    </div>
+                </button>
+                
+                <!-- Contenedor desactivado inicialmente -->
+                <div id="slide-to-exit-container" class="flex-1 bg-white dark:bg-[#1c1c1e] border-[1.5px] border-gray-200 dark:border-[#2c2c2e] rounded-full h-[54px] relative overflow-hidden flex items-center select-none opacity-60 pointer-events-none transition-all duration-300">
+                    
+                    <div id="slide-fill-bar" class="absolute left-0 top-0 h-full bg-[#ff5a00] w-0 transition-all duration-75"></div>
+                    
+                    <div id="slide-text-container" class="absolute inset-0 flex items-center justify-center pointer-events-none z-10 transition-opacity duration-300">
+                        <span contenteditable="false" data-editable="true" class="text-gray-400 dark:text-[#666] font-black text-[17px] tracking-wide">Salir</span>
+                    </div>
+                    
+                    <div id="loading-planets" class="didi-loader opacity-0 transition-opacity duration-200">
+                        <div class="planet"></div>
+                        <div class="planet"></div>
+                    </div>
+                    
+                    <div id="slide-thumb" class="absolute left-[3px] top-[3px] bottom-[3px] w-[46px] bg-gray-100 dark:bg-[#2c2c2e] rounded-full flex items-center justify-center cursor-grab active:cursor-grabbing z-20 transition-all duration-75 shadow-[0_2px_5px_rgba(0,0,0,0.1)]">
+                        <svg id="slide-thumb-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="translate-x-[1px] transition-colors duration-300"><path d="m13 17 5-5-5-5M6 17l5-5-5-5"/></svg>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- INTERFAZ COMPARTIDA (ETAPAS 2 y 3)         -->
+    <!-- ========================================== -->
+
+    <div id="shared-top-badge" class="absolute top-12 left-1/2 -translate-x-1/2 z-[1000] bg-white dark:bg-[#1c1c1e] px-4 py-2 rounded-full shadow-[0_4px_15px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_15px_rgba(0,0,0,0.5)] font-black text-lg tracking-wide text-gray-900 dark:text-white opacity-0 transition-opacity duration-500 pointer-events-none border border-gray-100 dark:border-[#2c2c2e] flex items-center justify-center gap-2">
+        <div class="bg-[#16a34a]/10 dark:bg-[#4ade80]/20 text-[#16a34a] dark:text-[#4ade80] w-6 h-6 rounded-full flex items-center justify-center text-[13px]">
+            <i class="fa-solid fa-dollar-sign"></i>
+        </div>
+        <span contenteditable="false" data-editable="true" class="text-[17px] mt-[1px]">380.000</span>
+    </div>
+
+    <div id="shared-fabs" class="absolute right-4 top-[55%] -translate-y-1/2 z-[1000] flex flex-col gap-3 opacity-0 pointer-events-none translate-x-8 transition-all duration-500 ease-out">
+        <button class="w-[46px] h-[46px] bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-lg flex items-center justify-center text-black dark:text-white transition active:scale-95 border border-gray-100 dark:border-[#2c2c2e]">
+            <i class="fa-solid fa-message text-[18px]"></i>
+        </button>
+        <button id="btn-toggle-stage" class="w-[46px] h-[46px] bg-white dark:bg-[#1c1c1e] rounded-2xl shadow-lg flex items-center justify-center text-black dark:text-white transition active:scale-95 border border-gray-100 dark:border-[#2c2c2e]">
+            <i id="icon-toggle-stage" class="fa-solid fa-list-ul text-[18px]"></i>
+        </button>
+        <button class="w-[46px] h-[46px] bg-[#ea580c] rounded-2xl shadow-[0_4px_12px_rgba(234,88,12,0.4)] flex items-center justify-center text-white transition active:scale-95 border border-[#ea580c]">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 22l10-3 10 3L12 2z"/></svg>
+        </button>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ETAPA 2: MAPA CON RUTA DE NAVEGACIÓN       -->
+    <!-- ========================================== -->
+    <div id="stage-2" class="w-full h-screen hidden stage-transition relative overflow-hidden">
+        <div id="map-stage2" class="real-map-container"></div>
+        
+        <div id="stage2-bottom-sheet" class="bottom-sheet bg-white dark:bg-[#1c1c1e] text-gray-900 dark:text-white">
+            <div class="sheet-handle bg-gray-300 dark:bg-[#38383a]"></div>
+
+            <div class="animation-slot">
+                <div class="success-check-badge">
+                    <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>
+                </div>
+                <!-- LOGO REDONDEADO -->
+                <div id="stage2-restaurant-logo" class="restaurant-badge-logo" style="background-image: url('https://images.unsplash.com/photo-1513104890138-7c749659a591?auto=format&fit=crop&w=800&q=80');"></div>
+            </div>
+
+            <!-- MÁRGENES REDUCIDOS -->
+            <div id="stage2-order-title" class="text-[26px] font-black text-gray-900 dark:text-white mb-1 mt-1 text-center tracking-tight" contenteditable="false" data-editable="true">#38 Usuario7236</div>
+            <div id="stage2-order-date" class="text-[20px] text-gray-900 dark:text-white mb-4 text-center font-bold" contenteditable="false" data-editable="true">Cargando hora...</div>
+
+            <div class="text-[16px] text-gray-600 dark:text-[#a0a0a0] text-center leading-relaxed mb-5">
+                <span contenteditable="false" data-editable="true">Recolección exitosa</span><br>
+                Muéstrale esta página a <span id="stage2-restaurant-name" class="text-gray-600 dark:text-[#a0a0a0]" contenteditable="false" data-editable="true">Little Caesars Pizza (Restrepo)</span>
+            </div>
+
+            <button id="btn-start-delivery" class="btn-action w-full">Iniciar entrega</button>
+        </div>
+
+        <div id="stage2-nav-sheet" class="absolute bottom-0 left-0 w-full bg-white dark:bg-[#1c1c1e] rounded-t-[24px] shadow-[0_-6px_25px_rgba(0,0,0,0.15)] dark:shadow-[0_-6px_25px_rgba(0,0,0,0.6)] px-5 pb-8 pt-3 z-[500] translate-y-full transition-transform duration-500 ease-out flex flex-col">
+            <div id="stage2-expand-handle" class="stage2-expand-handle"></div>
+
+            <div class="shrink-0">
+                <h2 class="text-[28px] leading-tight font-black text-gray-900 dark:text-white mb-2 tracking-tight" contenteditable="false" data-editable="true">Cl. 18 Sur, 6</h2>
+                <p class="text-[16px] text-gray-700 dark:text-[#d0d0d0] leading-snug mb-5 font-medium" contenteditable="false" data-editable="true">Cl. 18 Sur, 6, Cl. 18 Sur #6, Bogotá,<br>Antonio Nariño</p>
+
+                <div class="bg-[#f5f6f8] dark:bg-[#2c2c2e] rounded-[22px] px-5 py-4 flex items-center justify-center mb-6">
+                    <span class="text-[14px] font-bold text-gray-800 dark:text-gray-200 text-center" contenteditable="false" data-editable="true">
+                        Recomendamos llegar antes de la(s) <span class="text-[#ea580c] font-black ml-1">17:09</span>
+                    </span>
+                </div>
+            </div>
+
+            <div class="stage2-details-content">
+                <div class="stage2-detail-card mb-5">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0 flex-1">
+                            <div id="stage2-customer-title" class="text-[28px] leading-tight font-black text-gray-900 dark:text-white tracking-tight" contenteditable="false" data-editable="true">#38 Usuario7236</div>
+                            <div id="stage2-customer-place" class="text-[21px] leading-tight text-gray-900 dark:text-white mt-4 font-medium" contenteditable="false" data-editable="true">discoteca terraza vip</div>
+                        </div>
+
+                        <div class="flex items-center gap-3 shrink-0">
+                            <button id="stage2-call-user" class="stage2-contact-button" aria-label="Llamar al usuario"><i class="fa-solid fa-phone text-[25px]"></i></button>
+                            <button id="stage2-chat-user" class="stage2-contact-button" aria-label="Escribir al usuario"><i class="fa-solid fa-comment text-[24px]"></i></button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-3 mt-7 text-[20px] text-gray-900 dark:text-white">
+                        <span class="stage2-cash-icon">$</span>
+                        <span contenteditable="false" data-editable="true" class="font-medium">Recibe <span id="stage2-cash-amount" class="stage2-cash-value" contenteditable="false" data-editable="true">$29.797</span> del usuario</span>
+                        <span class="w-[20px] h-[20px] rounded-full border-[1.8px] border-gray-800 dark:border-gray-200 flex items-center justify-center text-[12px] font-bold shrink-0">i</span>
+                    </div>
+
+                    <button id="stage2-cash-received" class="w-full bg-[#ff5a00] text-white font-black py-[16px] rounded-[24px] text-[20px] mt-7 transition active:scale-[0.98]">
+                        Efectivo recibido
+                    </button>
+
+                    <div class="text-center mt-6">
+                        <button id="stage2-order-details" class="text-[17px] font-medium text-gray-500 dark:text-[#a0a0a0] inline-flex items-center justify-center">
+                            <span contenteditable="false" data-editable="true">Detalles del pedido</span>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ml-1"><path d="m9 18 6-6-6-6"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="stage2-help-card bg-[#f0f0f4] dark:bg-[#2c2c2e] rounded-[22px] px-6 py-5 flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-4">
+                        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="text-gray-900 dark:text-white shrink-0"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+                        <span contenteditable="false" data-editable="true" class="text-[19px] font-bold text-gray-900 dark:text-white">Centro de ayuda</span>
+                    </div>
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="m9 18 6-6-6-6"/></svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- ETAPA 3: MAPA GPS (ESTADÍSTICAS)           -->
+    <!-- ========================================== -->
+    <div id="stage-3" class="w-full h-screen hidden stage-transition relative overflow-hidden">
+        <div id="map-stage3" class="real-map-container"></div>
+        <div class="absolute top-12 left-4 z-[1000]">
+            <button id="btn-close-stage3" class="w-[42px] h-[42px] bg-white/90 dark:bg-[#1e293b]/90 backdrop-blur-md text-gray-900 dark:text-white rounded-[14px] flex items-center justify-center shadow-md transition active:scale-95 border border-gray-200 dark:border-slate-700/50">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div class="bottom-sheet bg-white dark:bg-[#1c1c1e] !p-[20px]">
+            <div class="sheet-handle bg-gray-300 dark:bg-[#38383a]" style="display:block"></div>
+            <div class="w-full text-center mb-4 mt-2">
+                <h2 class="text-gray-900 dark:text-white font-bold text-lg tracking-wide mb-1" contenteditable="false" data-editable="true">Estadísticas de entrega</h2>
+                <p class="text-gray-500 dark:text-[#a0a0a0] text-xs font-medium" contenteditable="false" data-editable="true"><span id="stage3-completed-count" class="font-bold">7</span> pedidos completados</p>
+            </div>
+            <div class="w-full bg-[#f5f6f8] dark:bg-[#2c2c2e] rounded-2xl p-4 mb-3 grid grid-cols-2 divide-x divide-gray-300 dark:divide-[#38383a]">
+                <div class="flex flex-col items-center justify-center pr-2">
+                    <span id="stage3-orders-count" class="text-gray-900 dark:text-white font-black text-3xl mb-1" contenteditable="false" data-editable="true">3</span>
+                    <span class="text-gray-500 dark:text-[#a0a0a0] text-[11px] font-bold uppercase tracking-wide" contenteditable="false" data-editable="true">Pedido(s) en curso</span>
+                </div>
+                <div class="flex flex-col items-center justify-center pl-2">
+                    <span id="stage3-time-count" class="text-gray-900 dark:text-white font-black text-3xl mb-1" contenteditable="false" data-editable="true">36</span>
+                    <span class="text-gray-500 dark:text-[#a0a0a0] text-[11px] font-bold uppercase tracking-wide" contenteditable="false" data-editable="true">min restantes</span>
+                </div>
+            </div>
+            <div id="stage3-details-banner" class="w-full bg-emerald-50 dark:bg-[#0d281e] border border-emerald-200 dark:border-[#14532d] rounded-xl px-4 py-3.5 flex items-center justify-between cursor-pointer transition active:scale-[0.98]">
+                <span class="text-emerald-700 dark:text-[#4ade80] font-semibold text-[13px] truncate pr-2">
+                    Ver detalles en <span id="stage3-restaurant-name" contenteditable="false" data-editable="true">Little Caesars Pizza (Restrepo)</span>
+                </span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <div class="w-5 h-5 rounded-full bg-[#16a34a] text-white flex items-center justify-center text-[10px]"><i class="fa-solid fa-check"></i></div>
+                    <i class="fa-solid fa-chevron-right text-emerald-600 dark:text-[#4ade80] text-[11px]"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- SCRIPT GENERAL Y CONFIGURACIÓN             -->
+    <!-- ========================================== -->
+    <script>
+        // Declaración global de variables de estado para evitar errores TDZ (Temporal Dead Zone)
+        let isEditMode = false;
+        let speechEngineUnlocked = false;
+        let isVerificationMode = false;
+        let liveClockInterval;
+
+        const stage1 = document.getElementById('stage-1');
+        const stage2 = document.getElementById('stage-2');
+        const stage3 = document.getElementById('stage-3');
+        
+        const btnStartDelivery = document.getElementById('btn-start-delivery');
+        const btnToggleStage = document.getElementById('btn-toggle-stage');
+        const iconToggleStage = document.getElementById('icon-toggle-stage');
+        const btnCloseStage3 = document.getElementById('btn-close-stage3');
+        const btnOrderAction = document.getElementById('btn-order-action');
+        
+        const sharedTopBadge = document.getElementById('shared-top-badge');
+        const sharedFabs = document.getElementById('shared-fabs');
+
+        const stage2BottomSheet = document.getElementById('stage2-bottom-sheet');
+        const stage2NavSheet = document.getElementById('stage2-nav-sheet');
+        const stage2ExpandHandle = document.getElementById('stage2-expand-handle');
+        const stage2CustomerTitle = document.getElementById('stage2-customer-title');
+        const stage2CallUser = document.getElementById('stage2-call-user');
+        const stage2ChatUser = document.getElementById('stage2-chat-user');
+        const stage2CashReceived = document.getElementById('stage2-cash-received');
+        const stage3DetailsBanner = document.getElementById('stage3-details-banner');
+
+        function speakNotification(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'es-ES'; 
+                utterance.rate = 1.0;     
+                utterance.pitch = 1.0;    
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Panel deslizable Etapa 2
+        let stage2SheetDragging = false;
+        let stage2SheetStartY = 0;
+        let stage2SheetLastY = 0;
+        let stage2SheetStartedOnHandle = false;
+
+        function setStage2SheetExpanded(expanded) {
+            if (!stage2NavSheet) return;
+            stage2NavSheet.classList.toggle('stage2-sheet-expanded', expanded);
+            stage2NavSheet.dataset.expanded = expanded ? 'true' : 'false';
+        }
+
+        function startStage2SheetDrag(e) {
+            if (!stage2NavSheet || stage2NavSheet.classList.contains('slide-down-animation')) return;
+            stage2SheetDragging = true;
+            stage2SheetStartedOnHandle = !!e.target.closest('#stage2-expand-handle');
+            stage2SheetStartY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+            stage2SheetLastY = stage2SheetStartY;
+            stage2NavSheet.style.transition = 'none';
+        }
+
+        function moveStage2SheetDrag(e) {
+            if (!stage2SheetDragging) return;
+            const currentY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+            stage2SheetLastY = currentY;
+        }
+
+        function endStage2SheetDrag() {
+            if (!stage2SheetDragging) return;
+            stage2SheetDragging = false;
+            stage2NavSheet.style.transition = '';
+            const deltaY = stage2SheetLastY - stage2SheetStartY;
+
+            if (deltaY < -35) {
+                setStage2SheetExpanded(true);
+            } else if (deltaY > 35) {
+                setStage2SheetExpanded(false);
+            } else if (stage2SheetStartedOnHandle) {
+                setStage2SheetExpanded(stage2NavSheet.dataset.expanded !== 'true');
+            }
+            stage2SheetStartedOnHandle = false;
+        }
+
+        stage2NavSheet.addEventListener('touchstart', startStage2SheetDrag, {passive: true});
+        stage2NavSheet.addEventListener('mousedown', startStage2SheetDrag);
+        window.addEventListener('mousemove', moveStage2SheetDrag);
+        window.addEventListener('touchmove', moveStage2SheetDrag, {passive: true});
+        window.addEventListener('mouseup', endStage2SheetDrag);
+        window.addEventListener('touchend', endStage2SheetDrag);
+
+
+        const headerImageContainer = document.getElementById('header-image-container');
+        const stage2RestaurantLogo = document.getElementById('stage2-restaurant-logo');
+        const imageFileInput = document.getElementById('image-file-input');
+        const logoFileInput = document.getElementById('logo-file-input');
+        const btnChangeLogo = document.getElementById('btn-change-logo');
+        const btnChangeLogoContainer = document.getElementById('btn-change-logo-container');
+
+        // Referencias de Verificación Modal
+        const btnToggleVerification = document.getElementById('btn-toggle-verification');
+        const btnToggleVerificationContainer = document.getElementById('btn-toggle-verification-container');
+        const normalOrderFlow = document.getElementById('normal-order-flow');
+        const verificationOrderFlow = document.getElementById('verification-order-flow');
+        const btnVerificationAction = document.getElementById('btn-verification-action');
+        
+        // Elementos del modal
+        const codeModal = document.getElementById('code-modal-overlay');
+        const codeModalContent = document.getElementById('code-modal-content');
+        const btnCancelCode = document.getElementById('btn-cancel-code');
+        const btnConfirmCode = document.getElementById('btn-confirm-code');
+        const codeInputs = document.querySelectorAll('.code-input');
+
+        const tileVoyager = 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+        const tileDarkMatter = 'https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}';
+        
+        let mapStage2, mapStage3;
+        let stage2TileLayer, stage3TileLayer;
+        let stage2BgRoute, stage2MainRoute, stage3BgRoute, stage3MainRoute;
+        let markerStartStage2, markerEndStage2, markerStartStage3, markerEndStage3;
+
+        let isDarkMode = false;
+        setTimeout(() => {
+            const dmc = document.getElementById('dark-mode-container');
+            if (dmc) dmc.classList.add('opacity-0', 'pointer-events-none');
+        }, 8000);
+
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            document.documentElement.classList.toggle('dark', isDarkMode);
+            const darkModeIcon = document.getElementById('dark-mode-icon');
+            if (isDarkMode) {
+                darkModeIcon.className = 'fa-solid fa-sun text-sm text-yellow-400';
+            } else {
+                darkModeIcon.className = 'fa-solid fa-moon text-sm text-gray-800';
+            }
+            const currentTile = isDarkMode ? tileDarkMatter : tileVoyager;
+            if (stage2TileLayer) stage2TileLayer.setUrl(currentTile);
+            if (stage3TileLayer) stage3TileLayer.setUrl(currentTile);
+        }
+        document.getElementById('btn-dark-mode-toggle').addEventListener('click', toggleDarkMode);
+
+        let baseLat = 4.6100;
+        let baseLng = -74.0900;
+        let startLocation = [baseLat, baseLng];
+        let endLocation = [baseLat + 0.04, baseLng + 0.04];
+        let bogotaCenter = [baseLat + 0.02, baseLng + 0.02];
+        let realRouteCoords = [startLocation, endLocation];
+
+        function updateMapRoutes() {
+            if (stage2BgRoute) stage2BgRoute.setLatLngs(realRouteCoords);
+            if (stage2MainRoute) stage2MainRoute.setLatLngs(realRouteCoords);
+            if (stage3BgRoute) stage3BgRoute.setLatLngs(realRouteCoords);
+            if (stage3MainRoute) stage3MainRoute.setLatLngs(realRouteCoords);
+            
+            if (markerStartStage2) markerStartStage2.setLatLng(startLocation);
+            if (markerEndStage2) markerEndStage2.setLatLng(endLocation);
+            if (markerStartStage3) markerStartStage3.setLatLng(startLocation);
+            if (markerEndStage3) markerEndStage3.setLatLng(endLocation);
+        }
+
+        function generateRouteFrom(lat, lng) {
+            startLocation = [lat, lng];
+            const distanceKm = 1 + (Math.random() * 1); 
+            const distDeg = distanceKm / 111.32; 
+            const angle = Math.random() * 2 * Math.PI;
+            const endLat = lat + distDeg * Math.cos(angle);
+            const endLng = lng + (distDeg * Math.sin(angle)) / Math.cos(lat * Math.PI / 180);
+            
+            endLocation = [endLat, endLng];
+            bogotaCenter = [(lat + endLat) / 2, (lng + endLng) / 2];
+            realRouteCoords = [startLocation, endLocation];
+            updateMapRoutes();
+        }
+
+        async function initLocationAndRoute() {
+            const randomLat = 4.6100 + (Math.random() * 0.1 - 0.05);
+            const randomLng = -74.0900 + (Math.random() * 0.1 - 0.05);
+            generateRouteFrom(randomLat, randomLng);
+
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        generateRouteFrom(position.coords.latitude, position.coords.longitude);
+                        await fetchStreetRoute();
+                    },
+                    async (error) => {
+                        await fetchStreetRoute();
+                    },
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+                );
+            } else {
+                await fetchStreetRoute();
+            }
+        }
+
+        async function fetchStreetRoute() {
+            try {
+                const url = `https://router.project-osrm.org/route/v1/driving/${startLocation[1]},${startLocation[0]};${endLocation[1]},${endLocation[0]}?overview=full&geometries=geojson`;
+                const response = await fetch(url);
+                const data = await response.json();
+                if (data.routes && data.routes.length > 0) {
+                    realRouteCoords = data.routes[0].geometry.coordinates.map(coord => [coord[1], coord[0]]);
+                    updateMapRoutes(); 
+                }
+            } catch (error) {
+                console.error("Fallo OSRM. Se usará línea recta.");
+            }
+        }
+
+        initLocationAndRoute();
+
+        const iconDidiPointerHTML = `
+            <svg style="width: 100%; height: 100%;" viewBox="0 0 100 130" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <filter id="sombra-marcador" x="-20%" y="-20%" width="140%" height="140%">
+                        <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000000" flood-opacity="0.15" />
+                    </filter>
+                </defs>
+                <path d="M 50 5 L 19.15 56.5 A 36 36 0 1 0 80.85 56.5 Z" fill="white" filter="url(#sombra-marcador)" />
+                <polygon points="50,20.5 24,65 76,65" fill="#4a7cf6" />
+                <circle cx="50" cy="75" r="28" fill="white" />
+                <circle cx="50" cy="75" r="20" fill="#4a7cf6" />
+            </svg>`;
+
+        const iconGreenUserHTML = `
+            <div style="position:relative; width:44px; height:65px; display:flex; flex-direction:column; align-items:center;">
+                <div style="width:38px; height:38px; background-color:#5ca677; border:2.5px solid white; border-radius:50%; display:flex; align-items:center; justify-content:center; z-index:3; position:relative; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"><i class="fa-solid fa-user text-white text-[18px]"></i><div style="position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid white;"></div><div style="position:absolute; bottom:-4px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:4px solid #5ca677; z-index:4;"></div></div>
+                <div style="width:2.5px; height:18px; background-color:#111; margin-top:-2px; z-index:2;"></div>
+                <div style="width:10px; height:10px; background-color:#111; border:2px solid white; border-radius:50%; margin-top:-4px; z-index:1; box-shadow:0 2px 4px rgba(0,0,0,0.4);"></div>
+            </div>`;
+
+        function initRealMaps() {
+            if(mapStage2) return;
+            const currentTile = isDarkMode ? tileDarkMatter : tileVoyager;
+            
+            const navMarkerIcon = L.divIcon({ className: 'custom-didi-pin bg-transparent border-0', html: iconDidiPointerHTML, iconSize: [38, 50], iconAnchor: [19, 25] });
+            const destMarkerIcon = L.divIcon({ className: 'custom-dest-pin', html: iconGreenUserHTML, iconSize: [44, 65], iconAnchor: [22, 60] });
+
+            mapStage2 = L.map('map-stage2', { center: bogotaCenter, zoom: 14, zoomControl: false });
+            stage2TileLayer = L.tileLayer(currentTile, { maxZoom: 20, subdomains: ['mt0','mt1','mt2','mt3'] }).addTo(mapStage2);
+            stage2BgRoute = L.polyline(realRouteCoords, { color: '#1d2b4f', weight: 8, opacity: 1, lineJoin: 'round' }).addTo(mapStage2);
+            stage2MainRoute = L.polyline(realRouteCoords, { color: '#9aaef5', weight: 4, opacity: 1, lineJoin: 'round' }).addTo(mapStage2);
+            markerStartStage2 = L.marker(startLocation, { icon: navMarkerIcon }).addTo(mapStage2);
+            markerEndStage2 = L.marker(endLocation, { icon: destMarkerIcon }).addTo(mapStage2);
+
+            mapStage3 = L.map('map-stage3', { center: bogotaCenter, zoom: 14, zoomControl: false });
+            stage3TileLayer = L.tileLayer(currentTile, { maxZoom: 20, subdomains: ['mt0','mt1','mt2','mt3'] }).addTo(mapStage3);
+            stage3BgRoute = L.polyline(realRouteCoords, { color: '#1d2b4f', weight: 8, opacity: 1, lineJoin: 'round' }).addTo(mapStage3);
+            stage3MainRoute = L.polyline(realRouteCoords, { color: '#9aaef5', weight: 4, opacity: 1, lineJoin: 'round' }).addTo(mapStage3);
+            markerStartStage3 = L.marker(startLocation, { icon: navMarkerIcon }).addTo(mapStage3);
+            markerEndStage3 = L.marker(endLocation, { icon: destMarkerIcon }).addTo(mapStage3);
+        }
+
+        function startLiveClock() {
+            const dateEl = document.getElementById('stage2-order-date');
+            if (!dateEl) return;
+            function tick() {
+                if (isEditMode) return; 
+                const now = new Date();
+                const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+                let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+                const ampm = h >= 12 ? 'pm' : 'am';
+                h = h % 12 || 12; 
+                m = m < 10 ? '0'+m : m; s = s < 10 ? '0'+s : s;
+                dateEl.innerText = `${now.getDate()} de ${months[now.getMonth()]}, ${h}:${m}:${s} ${ampm}`;
+            }
+            tick(); 
+            if (liveClockInterval) clearInterval(liveClockInterval);
+            liveClockInterval = setInterval(tick, 1000);
+        }
+
+        btnOrderAction.addEventListener('click', () => {
+            if (!speechEngineUnlocked && 'speechSynthesis' in window) {
+                const silentUtterance = new SpeechSynthesisUtterance('');
+                silentUtterance.volume = 0;
+                window.speechSynthesis.speak(silentUtterance);
+                speechEngineUnlocked = true;
+            }
+
+            btnOrderAction.className = 'w-full flex justify-center items-center py-2 transition-all duration-300 cursor-default';
+            btnOrderAction.innerHTML = `
+                <div class="flex items-center gap-2 text-[#48b479] dark:text-[#4ade80] font-bold text-[16px]">
+                    <i class="fa-solid fa-circle-check text-[18px]"></i>
+                    <span contenteditable="false" data-editable="true">Tengo el pedido</span>
+                </div>
+            `;
+            
+            const sliderContainer = document.getElementById('slide-to-exit-container');
+            const slideThumb = document.getElementById('slide-thumb');
+            const slideText = document.querySelector('#slide-text-container span');
+            const thumbIcon = document.getElementById('slide-thumb-icon');
+            const slideFillBar = document.getElementById('slide-fill-bar');
+            
+            sliderContainer.classList.remove('opacity-60', 'pointer-events-none', 'bg-white', 'dark:bg-[#1c1c1e]', 'border-[1.5px]', 'border-gray-200', 'dark:border-[#2c2c2e]');
+            sliderContainer.classList.add('bg-[#ff5a00]');
+            
+            slideThumb.classList.remove('bg-gray-100', 'dark:bg-[#2c2c2e]');
+            slideThumb.classList.add('bg-white');
+            
+            thumbIcon.setAttribute('stroke', '#ff5a00');
+            slideText.classList.remove('text-gray-400', 'dark:text-[#666]');
+            slideText.classList.add('text-white');
+            
+            if (slideFillBar) slideFillBar.style.display = 'none';
+        });
+
+        const sliderContainer = document.getElementById('slide-to-exit-container');
+        const slideThumb = document.getElementById('slide-thumb');
+        const slideTextContainer = document.getElementById('slide-text-container');
+        const loadingPlanets = document.getElementById('loading-planets');
+        
+        let isDragging = false, startX = 0, maxDrag = 0;
+        let isSliderLoading = false;
+
+        sliderContainer.addEventListener('mousedown', startDrag);
+        sliderContainer.addEventListener('touchstart', startDrag, {passive: true});
+        window.addEventListener('mousemove', drag);
+        window.addEventListener('touchmove', drag, {passive: true});
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+
+        function startDrag(e) {
+            if (isSliderLoading) return; 
+            isDragging = true;
+            startX = e.type.includes('mouse') ? e.pageX : e.touches[0].pageX;
+            maxDrag = sliderContainer.offsetWidth - slideThumb.offsetWidth - 6; 
+            slideThumb.style.transition = 'none';
+        }
+
+        function drag(e) {
+            if (!isDragging || isSliderLoading) return;
+            let moveX = (e.type.includes('mouse') ? e.pageX : e.touches[0].pageX) - startX;
+            if (moveX < 0) moveX = 0;
+            if (moveX > maxDrag) moveX = maxDrag;
+            slideThumb.style.transform = `translateX(${moveX}px)`;
+        }
+
+        function endDrag(e) {
+            if (!isDragging || isSliderLoading) return;
+            isDragging = false;
+            slideThumb.style.transition = 'transform 0.3s ease';
+            let moveX = (e.type.includes('mouse') ? e.pageX : e.changedTouches[0].pageX) - startX;
+
+            if (moveX > maxDrag * 0.8) {
+                isSliderLoading = true; 
+                sliderContainer.style.pointerEvents = 'none';
+                slideThumb.style.transform = `translateX(${maxDrag}px)`;
+                
+                slideTextContainer.style.opacity = '0';
+                slideThumb.style.opacity = '0';
+                loadingPlanets.classList.remove('opacity-0');
+                
+                setTimeout(() => {
+                    const rName = document.getElementById('stage1-restaurant-name');
+                    const oTitle = document.getElementById('stage1-order-title');
+                    
+                    if (rName) {
+                        const s2Name = document.getElementById('stage2-restaurant-name');
+                        if (s2Name) s2Name.innerText = rName.innerText;
+                        
+                        const s3Name = document.getElementById('stage3-restaurant-name');
+                        if (s3Name) s3Name.innerText = rName.innerText;
+                    }
+                    
+                    if (oTitle) {
+                        const s2Title = document.getElementById('stage2-order-title');
+                        if (s2Title) s2Title.innerText = oTitle.innerText;
+
+                        if (stage2CustomerTitle) stage2CustomerTitle.innerText = oTitle.innerText;
+                    }
+
+                    setStage2SheetExpanded(false);
+                    stage2NavSheet.style.transition = '';
+                    stage1.classList.add('hidden');
+                    stage2.classList.remove('hidden');
+                    
+                    initRealMaps();
+                    
+                    speakNotification("Recibiste un nuevo pedido, mantente en una zona segura para ver los detalles.");
+                    
+                    if(sharedTopBadge) sharedTopBadge.classList.remove('opacity-0', 'pointer-events-none');
+                    if(sharedFabs) sharedFabs.classList.remove('opacity-0', 'pointer-events-none', 'translate-x-8');
+
+                    setTimeout(() => {
+                        slideThumb.style.transform = `translateX(0px)`;
+                        slideTextContainer.style.opacity = '1';
+                        slideThumb.style.opacity = '1';
+                        loadingPlanets.classList.add('opacity-0');
+                        isSliderLoading = false;
+                        sliderContainer.style.pointerEvents = 'auto';
+                    }, 500);
+
+                    startLiveClock(); 
+                    
+                    setTimeout(() => {
+                        try {
+                            mapStage2.invalidateSize();
+                            if(stage2MainRoute) mapStage2.fitBounds(stage2MainRoute.getBounds(), { paddingTopLeft: [50, 50], paddingBottomRight: [50, 320] });
+                        } catch(err){}
+                    }, 400);
+                }, 1500); 
+            } else {
+                slideThumb.style.transform = `translateX(0px)`;
+            }
+        }
+
+        btnStartDelivery.addEventListener('click', () => {
+            if (stage2BottomSheet) stage2BottomSheet.classList.add('slide-down-animation');
+            if (stage2NavSheet) stage2NavSheet.classList.remove('translate-y-full');
+            if (mapStage2) {
+                setTimeout(() => {
+                    try {
+                        mapStage2.invalidateSize();
+                        if(stage2MainRoute) mapStage2.fitBounds(stage2MainRoute.getBounds(), { paddingTopLeft: [80, 80], paddingBottomRight: [80, 220], animate: true, duration: 1.0 });
+                    } catch(err){}
+                }, 300);
+            }
+        });
+
+        if (stage2CallUser) {
+            stage2CallUser.addEventListener('click', (e) => {
+                e.stopPropagation();
+                window.location.href = 'tel:';
+            });
+        }
+
+        if (stage2ChatUser) {
+            stage2ChatUser.addEventListener('click', (e) => {
+                e.stopPropagation();
+                window.location.href = 'sms:';
+            });
+        }
+
+        if (stage2CashReceived) {
+            stage2CashReceived.addEventListener('click', (e) => {
+                e.stopPropagation();
+                stage2CashReceived.innerHTML = '<i class="fa-solid fa-circle-check mr-2"></i>Efectivo recibido';
+                stage2CashReceived.classList.remove('bg-[#ff5a00]');
+                stage2CashReceived.classList.add('bg-[#ea580c]');
+            });
+        }
+
+        let isStage3Active = false;
+        btnToggleStage.addEventListener('click', () => {
+            if (!isStage3Active) {
+                stage2.classList.add('hidden');
+                stage3.classList.remove('hidden');
+                iconToggleStage.className = 'fa-solid fa-map-location-dot text-[18px]'; 
+                isStage3Active = true;
+                setTimeout(() => {
+                    try {
+                        mapStage3.invalidateSize();
+                        if(stage3MainRoute) mapStage3.fitBounds(stage3MainRoute.getBounds(), { padding: [100, 100] });
+                    } catch(e){}
+                }, 400);
+            } else {
+                stage3.classList.add('hidden');
+                stage2.classList.remove('hidden');
+                iconToggleStage.className = 'fa-solid fa-list-ul text-[18px]';
+                isStage3Active = false;
+                setTimeout(() => {
+                    mapStage2.invalidateSize();
+                }, 400);
+            }
+        });
+
+        btnCloseStage3.addEventListener('click', () => {
+            stage3.classList.add('hidden');
+            stage2.classList.remove('hidden');
+            iconToggleStage.className = 'fa-solid fa-list-ul text-[18px]';
+            isStage3Active = false;
+            setTimeout(() => {
+                mapStage2.invalidateSize();
+            }, 400);
+        });
+
+        if (stage3DetailsBanner) {
+            stage3DetailsBanner.addEventListener('click', () => {
+                stage3.classList.add('hidden');
+                stage2.classList.remove('hidden');
+                
+                iconToggleStage.className = 'fa-solid fa-list-ul text-[18px]';
+                isStage3Active = false;
+                
+                if (stage2BottomSheet) {
+                    stage2BottomSheet.classList.remove('slide-down-animation');
+                }
+                
+                if (stage2NavSheet) {
+                    stage2NavSheet.classList.add('translate-y-full'); 
+                    setStage2SheetExpanded(false); 
+                }
+                
+                setTimeout(() => {
+                    try {
+                        mapStage2.invalidateSize();
+                        if(stage2MainRoute) mapStage2.fitBounds(stage2MainRoute.getBounds(), { paddingTopLeft: [50, 50], paddingBottomRight: [50, 320] });
+                    } catch(e){}
+                }, 400);
+            });
+        }
+
+        // ===============================================
+        // MODO EDICIÓN, IMÁGENES Y LÓGICA DE VERIFICACIÓN
+        // ===============================================
+        const editIcon = document.getElementById('edit-icon');
+        const cameraIndicator = document.getElementById('camera-indicator');
+        const btnEditSwitch = document.getElementById('btn-edit-switch');
+        
+        btnEditSwitch.addEventListener('click', () => {
+            isEditMode = !isEditMode;
+            document.body.classList.toggle('edit-mode', isEditMode);
+            
+            document.querySelectorAll('[data-editable="true"]').forEach(el => {
+                el.setAttribute('contenteditable', isEditMode ? 'true' : 'false');
+            });
+
+            if (isEditMode) {
+                editIcon.className = 'fa-solid fa-chevron-left text-black dark:text-white text-[16px]';
+                btnEditSwitch.classList.add('opacity-80', 'bg-orange-100');
+                cameraIndicator.classList.remove('opacity-0');
+                cameraIndicator.classList.add('opacity-100');
+                btnChangeLogoContainer.classList.remove('opacity-0', 'pointer-events-none');
+                btnToggleVerificationContainer.classList.remove('opacity-0', 'pointer-events-none');
+            } else {
+                editIcon.className = 'fa-solid fa-chevron-down text-black dark:text-white text-[16px]';
+                btnEditSwitch.classList.remove('opacity-80', 'bg-orange-100');
+                cameraIndicator.classList.remove('opacity-100');
+                cameraIndicator.classList.add('opacity-0');
+                btnChangeLogoContainer.classList.add('opacity-0', 'pointer-events-none');
+                btnToggleVerificationContainer.classList.add('opacity-0', 'pointer-events-none');
+                window.getSelection().removeAllRanges(); 
+            }
+        });
+
+        // Alternar el flujo de Código de Verificación en Modo Edición
+        btnToggleVerification.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isVerificationMode = !isVerificationMode;
+            
+            if (isVerificationMode) {
+                normalOrderFlow.classList.add('hidden');
+                verificationOrderFlow.classList.remove('hidden');
+                btnToggleVerification.innerHTML = `<i class="fa-solid fa-check text-[#16a34a]"></i> Volver a Modo Normal`;
+            } else {
+                normalOrderFlow.classList.remove('hidden');
+                verificationOrderFlow.classList.add('hidden');
+                btnToggleVerification.innerHTML = `<i class="fa-solid fa-shield-halved text-[#ff5a00]"></i> Código Verificación`;
+            }
+        });
+
+        // Lógica Modal Transparente (4 Dígitos)
+        function openCodeModal() {
+            codeModal.classList.remove('hidden');
+            codeModal.style.display = 'flex';
+            // Reflow
+            void codeModal.offsetWidth;
+            
+            codeModal.classList.remove('opacity-0');
+            codeModalContent.classList.remove('scale-95');
+            codeInputs[0].focus();
+        }
+
+        function closeCodeModal() {
+            codeModal.classList.add('opacity-0');
+            codeModalContent.classList.add('scale-95');
+            setTimeout(() => {
+                codeModal.classList.add('hidden');
+                codeModal.style.display = 'none';
+                codeInputs.forEach(input => input.value = '');
+                btnConfirmCode.classList.add('opacity-50', 'pointer-events-none');
+            }, 300);
+        }
+
+        btnVerificationAction.addEventListener('click', openCodeModal);
+        btnCancelCode.addEventListener('click', closeCodeModal);
+
+        codeInputs.forEach((input, index) => {
+            input.addEventListener('input', (e) => {
+                input.value = input.value.replace(/[^0-9]/g, ''); // Solo números
+                if (input.value.length === 1 && index < codeInputs.length - 1) {
+                    codeInputs[index + 1].focus();
+                }
+                checkCodeCompletion();
+            });
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && input.value === '' && index > 0) {
+                    codeInputs[index - 1].focus();
+                }
+            });
+        });
+
+        function checkCodeCompletion() {
+            const isComplete = Array.from(codeInputs).every(input => input.value.length === 1);
+            if (isComplete) {
+                btnConfirmCode.classList.remove('opacity-50', 'pointer-events-none');
+            } else {
+                btnConfirmCode.classList.add('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        btnConfirmCode.addEventListener('click', () => {
+            closeCodeModal();
+            // Al confirmar, regresa al flujo "Tengo el pedido"
+            verificationOrderFlow.classList.add('hidden');
+            normalOrderFlow.classList.remove('hidden');
+            
+            // Reflejamos esto también en el botón de edición por si el usuario quiere volver a cambiarlo
+            isVerificationMode = false;
+            btnToggleVerification.innerHTML = `<i class="fa-solid fa-shield-halved text-[#ff5a00]"></i> Código Verificación`;
+        });
+
+        // Lógica de Imágenes
+        headerImageContainer.addEventListener('click', (e) => {
+            if (e.target.closest('button')) return;
+            if (isEditMode) {
+                imageFileInput.click();
+            }
+        });
+
+        imageFileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const imageUrl = event.target.result;
+                    headerImageContainer.style.backgroundImage = `url('${imageUrl}')`;
+                };
+                reader.readAsDataURL(file);
+            }
+            e.target.value = ''; 
+        });
+
+        btnChangeLogo.addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            logoFileInput.click();
+        });
+
+        logoFileInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const imageUrl = event.target.result;
+                    stage2RestaurantLogo.style.backgroundImage = `url('${imageUrl}')`;
+                };
+                reader.readAsDataURL(file);
+            }
+            e.target.value = ''; 
+        });
+    </script>
+</body>
+</html>
